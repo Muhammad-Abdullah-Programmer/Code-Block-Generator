@@ -1,0 +1,1201 @@
+'Small Basics Code block generator
+'By: Muhammad Abdullah
+
+CBG_Main()
+
+Sub CBG_Main
+  ' Code Block Generator | Main
+  title = "Code Block Generator"
+  traceC = "False"        ' trace subroutine call
+  traceX = "False"        ' trace operation execution
+  WQ = Text.GetCharacter(34)
+  CRLF = Text.GetCharacter(13) + Text.GetCharacter(10)
+  bcolor[1] = "#FFFFFF"   ' background color 1
+  bcolor[0] = "#F8F8F8"   ' background color 2
+  rcolor = "#008020"      ' remark (comment) color
+  scolor = "#CC6633"      ' string color
+  ncolor = "#DD6633"      ' number color
+  kcolor = "#7777FF"      ' keyword color
+  ccolor = "#006060"      ' class (object) color
+  mcolor = "#802020"      ' member (property, operation, event) color
+  ocolor = "#800000"      ' operator color
+  lcolor = "#5C5C5C"      ' line number color
+  fcolor = "#7F9DB9"      ' frame color
+  vcolor = "#000000"      ' variable (or label) color
+  sample[1] = "' Sample Program"
+  sample[2] = "For i = 1 To 10"
+  sample[3] = "  TextWindow.Write("+ WQ + "Hello, " + WQ + "+ i)"
+  sample[4] = "EndFor"
+  sample[5] = "TextWindow.WriteLine(" + WQ + WQ + ")"
+  GraphicsWindow.Title = title
+  GraphicsWindow.BrushColor = "Black"
+  GraphicsWindow.FontName = "Consolas"
+  fsize = 12
+  GraphicsWindow.FontSize = fsize
+  lheight = fsize * 1.22  ' line height
+  cwidth = fsize * 0.54   ' column width
+  gwidth = GraphicsWindow.Width
+  gheight = GraphicsWindow.Height
+  oheight = lheight * 6   ' options height
+  fheight = lheight * 3   ' footer height
+  bheight = (gheight - oheight - fheight - lheight * 3 - 20) / 2  ' source / preview text box
+  dheight = gheight - fheight - lheight - 20                      ' destination text box
+  Lex_Init()
+  While "True"
+    CBG_ShowSourceWindow()
+    nlines = Array.GetItemCount(sample) ' number of lines
+    sbuf = ""
+    For line = 1 To nlines
+      sbuf = Text.Append(sbuf, sample[line])
+      If line < nlines Then
+        sbuf = Text.Append(sbuf, CRLF)
+      EndIf
+    EndFor
+    Controls.SetTextBoxText(stextbox, sbuf)
+    Controls.ButtonClicked = CBG_OnButtonClicked
+    GraphicsWindow.MouseDown = CBG_OnMouseDown
+    clicked = ""
+    x0 = 12
+    x = x0 + 4
+    y0 = 10 + lheight * 3 + bheight + oheight + 2
+    height = lheight
+    While clicked <> obutton
+      If clicked = pbutton Then
+        clicked = ""
+        swidth = Controls.GetTextBoxText(wtextbox)  ' max snippet width
+        sheight = Controls.GetTextBoxText(htextbox) ' max snippet height
+        GraphicsWindow.BrushColor = "White"
+        GraphicsWindow.FillRectangle(x0 - 4, y0 - 4, _swidth + 4, _sheight + 4)
+        If (swidth <> lswidth) Or (sheight <> lsheight)Then
+          lswidth = swidth                          ' last snippet width
+          lsheight = sheight                        ' last snippet height
+          If Text.EndsWith(swidth, "%") Then
+            percent = Text.GetSubText(swidth, 1, Text.GetLength(swidth) - 1)
+            _swidth = Math.Floor((gwidth - 20) * percent / 100)
+          ElseIf swidth = "" Then
+            _swidth = gwidth - 20
+          Else
+            _swidth = swidth
+          EndIf
+          If Text.EndsWith(sheight, "%") Then
+            percent = Text.GetSubText(sheight, 1, Text.GetLength(sheight) - 1)
+            _sheight = Math.Floor(bheight * percent / 100)
+          ElseIf sheight = "" Then
+            _sheight = bheight
+          Else
+            _sheight = sheight
+          EndIf
+        EndIf
+        GraphicsWindow.PenWidth = 1
+        GraphicsWindow.PenColor = fcolor
+        GraphicsWindow.DrawRectangle(x0 - 2, y0 - 2, _swidth, _sheight)
+        sbuf = Controls.GetTextBoxText(stextbox)    ' source buffer
+        CBG_GetLineCount()                          ' get nlines (number of lines)
+        max = Math.Floor(_sheight / lheight)
+        nlines = Math.Min(nlines, max)
+        display = "True"
+        CBG_Parse()
+      ElseIf clicked = "cbox" Then
+        clicked = ""
+        If dispnum Then
+          dispnum = "False"
+          Shapes.HideShape(check)
+        Else
+          dispnum = "True"
+          Shapes.ShowShape(check)
+        EndIf
+      Else
+        Program.Delay(100)
+      EndIf
+    EndWhile
+    display = "False"
+    swidth = Controls.GetTextBoxText(wtextbox)    ' max snippet width
+    sheight = Controls.GetTextBoxText(htextbox)   ' max snippet height
+    sbuf = Controls.GetTextBoxText(stextbox)      ' source buffer
+    CBG_GetLineCount()                            ' get nlines (number of lines)
+    CBG_Parse()
+    CBG_ShowDestinationWindow()
+    clicked = ""
+    While clicked <> obutton
+      Program.Delay(100)
+    EndWhile
+  EndWhile
+EndSub
+
+Sub CBG_GetLine
+  ' param sbuf - source buffer
+  ' param slen - source buffer length
+  ' param sptr - source buffer pointer
+  ' return buf - line buffer
+  _ptr = Text.GetIndexOf(Text.GetSubTextToEnd(sbuf, sptr), CRLF)
+  If _ptr = 0 Then
+    _ptr = slen - sptr + 2
+  EndIf
+  buf = Text.GetSubText(sbuf, sptr, _ptr - 1)
+  sptr = sptr + _ptr + 1
+EndSub
+
+Sub CBG_GetLineCount
+  ' param sbuf - source buffer
+  ' return slen - source buffer length
+  ' return nlines - source buffer number of lines
+  ' return sptr - source buffer pointer = 1
+  slen = Text.GetLength(sbuf)
+  sptr = 1
+  _ptr = 1
+  nlines = 0
+  While 0 < _ptr And _ptr <= slen
+    nlines = nlines + 1
+    _ptr = Text.GetIndexOf(Text.GetSubTextToEnd(sbuf, sptr), CRLF)
+    If 0 < _ptr Then
+      sptr = sptr + _ptr + 1
+    EndIf
+  EndWhile
+  sptr = 1
+EndSub
+
+Sub CBG_OnButtonClicked
+  clicked = Controls.LastClickedButton
+EndSub
+
+Sub CBG_OnMouseDown
+  mx = GraphicsWindow.MouseX
+  my = GraphicsWindow.MouseY
+  If (bx0 <= mx) And (mx <= bx1) And (by0 <= my) And (my <= by1) Then
+    clicked = "cbox"
+  EndIf
+EndSub
+
+Sub CBG_Parse
+  GraphicsWindow.FontBold = "False"
+  cbuf = "<div class=" + WQ + "reCodeBlock" + WQ + " style=" + WQ + "border:1px solid " + fcolor + "; "
+  If swidth <> "" Then
+    cbuf = cbuf + "width:" + swidth
+    If Text.EndsWith(swidth, "%") = "False" Then
+      cbuf = cbuf + "px"
+    EndIf
+    cbuf = cbuf + "; "
+  EndIf
+  If sheight <> "" Then
+    cbuf = cbuf + "height:" + sheight
+    If Text.EndsWith(sheight, "%") = "False" Then
+      cbuf = cbuf + "px"
+    EndIf
+    cbuf = cbuf + "; "
+  EndIf
+  cbuf = cbuf + "overflow:auto; font-size:12px;" + WQ + ">" + CRLF + "  "
+  For line = 1 To nlines
+    linetop = "True"
+    cbuf = cbuf + "<div style=" + WQ + "background-color: " + bcolor[Math.Remainder(line, 2)] + ";" + WQ + ">"
+    If dispnum Then
+      cbuf = cbuf + "<code" + CRLF + "  "
+      cbuf = cbuf + "style=" + WQ + "color:" + lcolor + "; float:left; width:3em; padding-right:0.3em; text-align:right; display:block;" + WQ + ">" + line + ".</code" + CRLF + "  "
+      cbuf = cbuf + ">"
+    EndIf
+    If display Then
+      y = y0 + height * (line - 1)
+      GraphicsWindow.BrushColor = bcolor[Math.Remainder(line, 2)]
+      GraphicsWindow.FillRectangle(x0, y, _swidth - 4, height)
+      If dispnum Then
+        GraphicsWindow.BrushColor = lcolor
+        GraphicsWindow.DrawText(x, y, Text.Append(line, "."))
+        column = 5
+      Else
+        column = 1
+      EndIf
+    EndIf
+    CBG_GetLine()
+    len = Text.GetLength(buf)
+    ptr = 1
+    Parse_State()
+    If linetop Then
+      linetop = "False"
+      cbuf = cbuf + "<code>&nbsp;</code>"  ' to avoid null line collapse
+    Else
+      cbuf = cbuf + "</code>"
+    EndIf
+    cbuf = cbuf + "</div>" + CRLF
+    If line < nlines Then
+      cbuf = cbuf + "  "
+    EndIf
+    If ptr <= len Then
+      TextWindow.ForegroundColor = "Green"
+      TextWindow.WriteLine("Syntax Error")
+      TextWindow.WriteLine(buf)
+      TextWindow.WriteLine(Text.GetSubText(SP60, 1, ptr - 1) + "^")
+      TextWindow.ForegroundColor = "Gray"
+    EndIf
+  EndFor
+  cbuf = cbuf + "</div>" + CRLF
+EndSub
+
+Sub CBG_ShowDestinationWindow
+  GraphicsWindow.Clear()
+  ' draw source code
+  GraphicsWindow.BrushColor = "SteelBlue"
+  GraphicsWindow.DrawText(10, 10, "Generated code block")
+  GraphicsWindow.BrushColor = "Black"
+  dtextbox = Controls.AddMultiLineTextBox(10, 10 + lheight)
+  Controls.SetSize(dtextbox, gwidth - 20, dheight)
+  Controls.SetTextBoxText(dtextbox, cbuf)
+  GraphicsWindow.DrawText(10, 10 + lheight * 4 + bheight * 2 + oheight, "Click textbox above, push Ctrl+A, Ctrl+C to copy and save to your editor")
+  obutton = Controls.AddButton("OK", gwidth - 10 - cwidth * 4, 10 + lheight * 4 + bheight * 2 + oheight)
+EndSub
+
+Sub CBG_ShowSourceWindow
+  GraphicsWindow.Clear()
+  ' draw source code
+  GraphicsWindow.BrushColor = "SteelBlue"
+  GraphicsWindow.DrawText(10, 10, "Paste source code below")
+  GraphicsWindow.BrushColor = "Black"
+  stextbox = Controls.AddMultiLineTextBox(10, 10 + lheight)
+  Controls.SetSize(stextbox, gwidth - 20, bheight)
+  ' draw options
+  GraphicsWindow.BrushColor = "SteelBlue"
+  GraphicsWindow.DrawText(10, 10 + lheight * 2 + bheight, "Options")
+  GraphicsWindow.BrushColor = "Black"
+  GraphicsWindow.DrawText(10, 10 + lheight * 3.2 + bheight, "Max Snippet Width")
+  wtextbox = Controls.AddTextBox(10 + cwidth * 18, 10 + lheight * 3 + bheight)
+  Controls.SetSize(wtextbox, cwidth * 7, fsize * 1.7)
+  Controls.SetTextBoxText(wtextbox, 550)
+  GraphicsWindow.DrawText(10 + cwidth * 26, 10 + lheight * 3.2 + bheight, "px / %")
+  GraphicsWindow.DrawText(10, 10 + fsize * 1.4 + bheight + lheight * 4.2, "Max Snippet Height")
+  htextbox = Controls.AddTextBox(10 + cwidth * 19, 10 + lheight * 5 + bheight)
+  Controls.SetSize(htextbox, cwidth * 7, fsize * 1.7)
+  GraphicsWindow.DrawText(10 + cwidth * 27, 10 + lheight * 5.2 + bheight "px / %")
+  GraphicsWindow.DrawText(gwidth / 2, 10 + bheight + lheight * 3.2, "Display Line Numbers")
+  GraphicsWindow.PenWidth = 1
+  GraphicsWindow.PenColor = "LightGray"
+  bx0 = gwidth / 2 + cwidth * 21          ' for check box
+  by0 = 10 + lheight * 3.2 + bheight
+  bx1 = bx0 + fsize
+  by1 = by0 + fsize
+  GraphicsWindow.DrawRectangle(bx0, by0, fsize, fsize)
+  check = Shapes.AddText("✔")
+  Shapes.Move(check, gwidth / 2 + cwidth * 21, 10 + lheight * 3.2 + bheight)
+  dispnum = "False"
+  Shapes.HideShape(check)
+  pbutton = Controls.AddButton("Preview", gwidth - 10 - cwidth * 9, 10 + lheight * 3 + bheight)
+  ' draw preview
+  GraphicsWindow.BrushColor = "SteelBlue"
+  GraphicsWindow.DrawText(10, 10 + lheight * 2 + bheight + oheight, "Preview")
+  GraphicsWindow.BrushColor = "Black"
+  GraphicsWindow.PenWidth = 1
+  GraphicsWindow.PenColor = fcolor
+  swidth = 550 ' gwidth - 20
+  _swidth = swidth
+  sheight = ""
+  _sheight = bheight
+  GraphicsWindow.DrawRectangle(10, 10 + lheight * 3 + bheight + oheight, _swidth, _sheight)
+  ' draw footer
+  obutton = Controls.AddButton("OK", gwidth - 10 - cwidth * 4, 10 + lheight * 4 + bheight * 2 + oheight)
+EndSub
+
+Sub Exec_Mem
+  ' Execution | Member
+  ' mem ::= <_name>[].[]<_name>
+  If match Then
+    If traceX Then
+      TextWindow.Write("Mem:_const=" + WQ + _const + WQ + ",_val=" + WQ + _val + WQ)
+    EndIf
+    val = _val[1] + "." + _val[2]
+    If traceX Then
+      TextWindow.WriteLine(",val=" + WQ + val + WQ)
+    EndIf
+  EndIf
+EndSub
+
+Sub Exec_Real
+  ' Execution | Real number
+  ' real ::= [-]<_num>[.<_num>]
+  If match Then
+    If traceX Then
+      TextWindow.Write("Rem:_const=" + WQ + _const + WQ + ",_val=" + WQ + _val + WQ)
+    EndIf
+    val = Text.Append(_const[1], _val[1])
+    val = Text.Append(val, _const[2])
+    val = Text.Append(val, _val[2])
+    If traceX Then
+      TextWindow.WriteLine(",val=" + WQ + val + WQ)
+    EndIf
+  EndIf
+EndSub
+
+Sub Exec_Rem
+  ' Execution | Remark (comment)
+  ' rem ::= _SQ*
+  If match Then
+    If traceX Then
+      TextWindow.Write("Rem:_const=" + WQ + _const + WQ + ",_val=" + WQ + _val + WQ)
+    EndIf
+    str = _const[1] + _const[2]
+    Lex_StrConvert()        ' conversion &, <, > for HTML
+    val = str
+    If traceX Then
+      TextWindow.WriteLine(",val=" + WQ + val + WQ)
+    EndIf
+  EndIf
+EndSub
+
+Sub Exec_Token
+  ' Excecution | Token
+  ' token ::= {<kw>|<op>|<mem>|<real>|<_str>|<var>|<rem>|[]}
+  If match Then
+    If traceX Then
+      TextWindow.Write("Token:_const=" + WQ + _const + WQ + ",_val=" + WQ + _val + WQ)
+    EndIf
+    bold = "False"
+    italic = "False"
+    If _opt[1] = "kw" Then          ' keyword
+      val = _val[1]
+      color = kcolor
+      bold = "True"
+    ElseIf _opt[1] = "op" Then      ' operator
+      val = _val[2]
+      val2 = val
+      If val = "<" Then
+        val = "&lt;"
+      ElseIf val = "<=" Then
+        val = "&lt;="
+      ElseIf val = ">" Then
+        val = "&gt;"
+      ElseIf val = ">=" Then
+        val = "&gt;="
+      ElseIf val = "<>" Then
+        val = "&lt;&gt;"
+      EndIf
+      color = ocolor
+    ElseIf _opt[1] = "mem" Then     ' member (property, operation, event)
+      ptrp = Text.GetIndexOf(_val[3], ".")
+      val = Text.GetSubText(_val[3], 1, ptrp - 1)
+      val2 = Text.GetSubTextToEnd(_val[3], ptrp + 1)
+      color = ccolor
+    ElseIf _opt[1] = "real" Then    ' real
+      val = _val[4]
+      color = ncolor
+    ElseIf _opt[1] = "_str" Then    ' string
+      val = _val[5]
+      color = scolor
+    ElseIf _opt[1] = "var" Then     ' variable, label, subroutine
+      val = _val[6]
+      color = vcolor
+    ElseIf _opt[1] = "rem" Then     ' remark (comment)
+      val = _val[7]
+      color = rcolor
+      italic = "True"
+    ElseIf _opt[1] = "" Then        ' space
+      If nspace = 1 Then
+        val = " "
+      Else
+        val = ""
+        For _sp = 1 To nspace
+          val = val + "&nbsp;"
+        EndFor
+      EndIf
+    EndIf
+    If _opt[1] = "" Then
+      If linetop Then
+        linetop = "False"
+        cbuf = cbuf + "<code>"
+      EndIf
+    Else
+      If linetop Then
+        linetop = "False"
+      Else
+        cbuf = cbuf + "</code>"
+      EndIf
+      cbuf = cbuf + "<code" + CRLF + "  "
+      cbuf = cbuf + "style=" + WQ + "color:" + color + ";"
+      If bold Then
+        cbuf = cbuf + " font-weight:bold;"
+      EndIf
+      If italic Then
+        cbuf = cbuf + " font-style:italic;"
+      EndIf
+      cbuf = cbuf + WQ
+      cbuf = cbuf + ">"
+    EndIf  
+    cbuf = cbuf + val
+    If _opt[1] = "mem" Then
+      cbuf = cbuf + "</code><code" + CRLF + "  "
+      cbuf = cbuf + "style=" + WQ + "color:" + ocolor + ";" + WQ + ">."
+      cbuf = cbuf + "</code><code" + CRLF + "  "
+      cbuf = cbuf + "style=" + WQ + "color:" + mcolor + ";" + WQ + ">" + val2
+    EndIf
+    If display Then
+      GraphicsWindow.FontBold = bold
+      GraphicsWindow.FontItalic = italic
+      GraphicsWindow.BrushColor = color
+      If _opt[1] = "op" Then
+        val = val2
+      EndIf
+      If _opt[1] = "" Then
+        val = Text.GetSubText(SP60, 1, nspace)
+      Else
+        GraphicsWindow.DrawText(x + cwidth * (column - 1), y, val)
+      EndIf
+      GraphicsWindow.FontBold = "False"
+      GraphicsWindow.FontItalic = "False"
+      column = column + Text.GetLength(val)
+      If _opt[1] = "mem" Then
+        GraphicsWindow.BrushColor = ocolor
+        GraphicsWindow.DrawText(x + cwidth * (column - 1), y, ".")
+        column = column + 1
+        GraphicsWindow.BrushColor = mcolor
+        GraphicsWindow.DrawText(x + cwidth * (column - 1), y, val2)
+        column = column + Text.GetLength(val2)
+      EndIf
+    EndIf
+    If traceX Then
+      TextWindow.WriteLine(",val=" + WQ + val + WQ)
+    EndIf
+  EndIf
+EndSub
+
+Sub Lex_Init
+  ' Lexical analysis | Initialization
+  UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  LOWER = "abcdefghijklmnopqrstuvwxyz"
+  DIGIT = "0123456789"
+  FCHAR = UPPER + LOWER + "_"   ' first charcters for label/variable/sub
+  TCHAR = FCHAR + DIGIT         ' trailing characters for label/variable/sub
+  WQ = Text.GetCharacter(34)                            ' double quote
+  SQ = "'"                                              ' single quote
+  CRLF = Text.GetCharacter(13) + Text.GetCharacter(10)  ' carriage return + line feed
+  SP60 = "                                                            "
+EndSub
+
+Sub Lex_Name
+  ' Lexical analysis | Name
+  ' param buf - buffer
+  ' param ptr - pointer
+  ' return match - "True" if match
+  ' return ptr - next pointer
+  ' return name, val - name
+  If traceC Then
+    TextWindow.WriteLine("<Lex_Name> " + ptr)
+  EndIf
+  ch = Text.GetSubText(buf, ptr, 1)
+  If Text.GetIndexOf(FCHAR, ch) > 0 Then
+    name = ch
+    ptr = ptr + 1
+    match = "True"
+    While match
+      ch = Text.GetSubText(buf, ptr, 1)
+      If Text.GetIndexOf(TCHAR, ch) > 0 Then
+        ptr = ptr + 1
+        name = name + ch
+      Else
+        match = "False"
+      EndIf
+    EndWhile
+    match = "True"
+  Else
+    name = ""
+    match = "False"
+  EndIf
+  If match Then
+    val = name
+  EndIf
+  If traceC Then
+    TextWindow.WriteLine("</Lex_Name> " + ptr)
+  EndIf
+EndSub
+
+Sub Lex_Num
+  ' Lexical analysis | Number
+  ' param buf - buffer
+  ' param ptr - pointer
+  ' return match - "True"
+  ' return ptr - next pointer
+  ' return val - number
+  ch = Text.GetSubText(buf, ptr, 1)
+  If Text.GetIndexOf(DIGIT, ch) > 0 Then
+    val = ch
+    ptr = ptr + 1
+    match = "True"
+    While match
+      ch = Text.GetSubText(buf, ptr, 1)
+      If Text.GetIndexOf(DIGIT, ch) > 0 Then
+        ptr = ptr + 1
+        val = Text.Append(val, ch)
+      Else
+        match = "False"
+      EndIf
+    EndWhile
+    match = "True"
+  Else
+    val = ""
+    match = "False"
+  EndIf
+EndSub
+
+Sub Lex_Space0
+  ' Lexical analysis | Null or space
+  ' param buf - buffer
+  ' param ptr - pointer
+  ' return match - "True"
+  ' return ptr - next pointer
+  ' return nspace - number of space
+  If traceC Then
+    TextWindow.WriteLine("<Lex_Space0> " + ptr)
+  EndIf
+  txt = " "
+  nspace = 0
+  match = "True"
+  While match
+    Lex_Text()
+    If match Then
+      nspace = nspace + 1
+    EndIf
+  EndWhile
+  match = "True"
+  If traceC Then
+    TextWindow.WriteLine("</Lex_Space0> " + ptr)
+  EndIf
+EndSub
+
+Sub Lex_Space1
+  ' Lexical analysis | At least one space
+  ' param buf - buffer
+  ' param ptr - pointer
+  ' return match - "True"
+  ' return ptr - next pointer
+  ' return nspace - number of space
+  If traceC Then
+    TextWindow.WriteLine("<Lex_Space1> " + ptr)
+  EndIf
+  txt = " "
+  nspace = 0
+  Lex_Text()
+  If match Then
+    nspace = nspace + 1
+    While match
+      Lex_Text()
+      If match Then
+        nspace = nspace + 1
+      EndIf
+    EndWhile
+    match = "True"
+  Else
+    TextWindow.WriteLine("Syntax Error: space not found")
+  EndIf
+  If traceC Then
+    TextWindow.WriteLine("</Lex_Space1> " + ptr)
+  EndIf
+EndSub
+
+Sub Lex_Str
+  ' Lexical analysis | String
+  ' param buf - buffer
+  ' param ptr - pointer
+  ' return match - "True"
+  ' return ptr - next pointer
+  ' return val - string
+  Stack.PushValue("local", ptr)
+  txt = WQ
+  Lex_Text()
+  If match Then
+    ch = Text.GetSubText(buf, ptr, 1)
+    str = ""
+    While ch <> WQ
+      str = Text.Append(str, ch)
+      ptr = ptr + 1
+      ch = Text.GetSubText(buf, ptr, 1)
+    EndWhile
+  EndIf
+  If match Then
+    txt = WQ
+    Lex_Text()
+  EndIf
+  _ptr = Stack.PopValue("local")
+  If match Then
+    Lex_StrConvert()
+    val = WQ + str + WQ
+  Else
+    val = ""
+    ptr = _ptr
+  EndIf
+EndSub
+
+Sub Lex_StrConvert
+  ' Lexical analysis | String convert for HTML
+  ' param str - string in source code 
+  ' return str - converted string for HTML
+  Stack.PushValue("local", ptr)
+  Stack.PushValue("local", len)
+  len = Text.GetLength(str)
+  _str = ""
+  For ptr = 1 To len
+    ch = Text.GetSubText(str, ptr, 1)
+    If ch = "&" Then
+      _str = _str + "&amp;"
+    ElseIf ch = "<" Then
+      _str = _str + "&lt;"
+    ElseIf ch = ">" Then
+      _str = _str + "&gt;"
+    Else
+      _str = Text.Append(_str, ch)
+    EndIf
+  EndFor
+  str = _str
+  len = Stack.PopValue("local")
+  ptr = Stack.PopValue("local")
+EndSub
+
+Sub Lex_Text
+  ' Lexical analysis | Text
+  ' param buf - buffer
+  ' param ptr - pointer
+  ' param txt - text to lexical analysis
+  ' return match - "True" if match
+  ' return ptr - next pointer
+  ' return val - txt if match
+  If traceC Then
+    If txt = CRLF Then
+      _txt = "CRLF"
+    ElseIf txt = WQ Then
+      _txt = SQ + txt + SQ
+    Else
+      _txt = WQ + txt + WQ
+    EndIf
+    TextWindow.WriteLine("<Lex_Text " + _txt + "> " + ptr)
+  EndIf
+  val = ""
+  txtlen = Text.GetLength(txt)
+  lotxt = Text.ConvertToLowerCase(txt)
+  lobuf = Text.ConvertToLowerCase(Text.GetSubText(buf, ptr, txtlen))
+  If lobuf = lotxt Then
+    match = "True"
+    ptr = ptr + txtlen
+    val = txt
+  Else
+    match = "False"
+  EndIf
+  If traceC Then
+    TextWindow.WriteLine("</Lex_Text> " + ptr)
+  EndIf
+EndSub
+
+Sub Parse_State
+  ' state ::= *[<token>]
+  If traceC Then
+    TextWindow.WriteLine("<Parse_State> " + ptr)
+  EndIf
+  _const = ""
+  Stack.PushValue("local", _opt)
+  _opt = ""
+  Stack.PushValue("local", _val)
+  _val = ""
+  match = "True"
+  While match And (ptr <= len)
+    Parse_Token()
+    _val[1] = val
+  EndWhile
+  match = "True"
+  _val = Stack.PopValue("local")
+  _opt = Stack.PopValue("local")
+  If traceC Then
+    TextWindow.WriteLine("</Parse_State> " + ptr)
+  EndIf
+EndSub
+
+Sub Parse_Token
+  ' token ::= {<kw>|<op>|<mem>|<real>|<_str>|<var>|<rem>|[]}
+  If traceC Then
+    TextWindow.WriteLine("<Parse_Token> " + ptr)
+  EndIf
+  _const = ""
+  Stack.PushValue("local", _opt)
+  _opt = ""
+  Stack.PushValue("local", _val)
+  _val = ""
+  Parse_Kw()
+  _val[1] = val
+  If match Then
+    _opt[1] = "kw"
+  EndIf
+  If match = "False" Then
+    Parse_Op()
+    _val[2] = val
+    If match Then
+      _opt[1] = "op"
+    EndIf
+  EndIf
+  If match = "False" Then
+    Parse_Mem()
+    _val[3] = val
+    If match Then
+      _opt[1] = "mem"
+    EndIf
+  EndIf
+  If match = "False" Then
+    Parse_Real()
+    _val[4] = val
+    If match Then
+      _opt[1] = "real"
+    EndIf
+  EndIf
+  If match = "False" Then
+    Lex_Str()
+    _val[5] = val
+    If match Then
+      _opt[1] = "_str"
+    EndIf
+  EndIf
+  If match = "False" Then
+    Parse_Var()
+    _val[6] = val
+    If match Then
+      _opt[1] = "var"
+    EndIf
+  EndIf
+  If match = "False" Then
+    Parse_Rem()
+    _val[7] = val
+    If match Then
+      _opt[1] = "rem"
+    EndIf
+  EndIf
+  If match = "False" Then
+    Lex_Space0()
+    If match Then
+      _opt[1] = ""
+    EndIf
+  EndIf
+  Exec_Token()
+  _val = Stack.PopValue("local")
+  _opt = Stack.PopValue("local")
+  If traceC Then
+    TextWindow.WriteLine("</Parse_Token> " + ptr)
+  EndIf
+EndSub
+
+Sub Parse_Kw
+  ' kw ::= {For|To|Step|EndFor|If|Then|ElseIf|Else|EndIf|While|EndWhile|Goto|Sub|EndSub}
+  If traceC Then
+    TextWindow.WriteLine("<Parse_Kw> " + ptr)
+  EndIf
+  _const = ""
+  Stack.PushValue("local", _opt)
+  _opt = ""
+  Stack.PushValue("local", _val)
+  _val = ""
+  txt = "For"
+  Lex_Text()
+  _const[1] = val
+  If match Then
+    _opt[1] = "For"
+  EndIf
+  If match = "False" Then
+    txt = "To"
+    Lex_Text()
+    _const[2] = val
+    If match Then
+      _opt[1] = "To"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "Step"
+    Lex_Text()
+    _const[3] = val
+    If match Then
+      _opt[1] = "Step"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "EndFor"
+    Lex_Text()
+    _const[4] = val
+    If match Then
+      _opt[1] = "EndFor"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "If"
+    Lex_Text()
+    _const[5] = val
+    If match Then
+      _opt[1] = "If"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "Then"
+    Lex_Text()
+    _const[6] = val
+    If match Then
+      _opt[1] = "Then"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "ElseIf"
+    Lex_Text()
+    _const[7] = val
+    If match Then
+      _opt[1] = "ElseIf"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "Else"
+    Lex_Text()
+    _const[8] = val
+    If match Then
+      _opt[1] = "Else"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "EndIf"
+    Lex_Text()
+    _const[9] = val
+    If match Then
+      _opt[1] = "EndIf"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "While"
+    Lex_Text()
+    _const[10] = val
+    If match Then
+      _opt[1] = "While"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "EndWhile"
+    Lex_Text()
+    _const[11] = val
+    If match Then
+      _opt[1] = "EndWhile"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "Goto"
+    Lex_Text()
+    _const[12] = val
+    If match Then
+      _opt[1] = "Goto"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "Sub"
+    Lex_Text()
+    _const[13] = val
+    If match Then
+      _opt[1] = "Sub"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "EndSub"
+    Lex_Text()
+    _const[14] = val
+    If match Then
+      _opt[1] = "EndSub"
+    EndIf
+  EndIf
+  _val = Stack.PopValue("local")
+  _opt = Stack.PopValue("local")
+  If traceC Then
+    TextWindow.WriteLine("</Parse_Kw> " + ptr)
+  EndIf
+EndSub
+
+Sub Parse_Op
+  ' op ::= {+|-|'*'|/|=|'<'|'>'|'<='|'>='|'<>'|And|Or|(|,|)|:}
+  If traceC Then
+    TextWindow.WriteLine("<Parse_Op> " + ptr)
+  EndIf
+  _const = ""
+  Stack.PushValue("local", _opt)
+  _opt = ""
+  Stack.PushValue("local", _val)
+  _val = ""
+  txt = "+"
+  Lex_Text()
+  _const[1] = val
+  If match Then
+    _opt[1] = "+"
+  EndIf
+  If match = "False" Then
+    txt = "-"
+    Lex_Text()
+    _const[2] = val
+    If match Then
+      _opt[1] = "-"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "*"
+    Lex_Text()
+    _const[3] = val
+    If match Then
+      _opt[1] = "*"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "/"
+    Lex_Text()
+    _const[4] = val
+    If match Then
+      _opt[1] = "/"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "="
+    Lex_Text()
+    _const[5] = val
+    If match Then
+      _opt[1] = "="
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "<"
+    Lex_Text()
+    _const[6] = val
+    If match Then
+      _opt[1] = "<"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = ">"
+    Lex_Text()
+    _const[7] = val
+    If match Then
+      _opt[1] = ">"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "<="
+    Lex_Text()
+    _const[8] = val
+    If match Then
+      _opt[1] = "<="
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = ">="
+    Lex_Text()
+    _const[9] = val
+    If match Then
+      _opt[1] = ">="
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "<>"
+    Lex_Text()
+    _const[10] = val
+    If match Then
+      _opt[1] = "<>"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "And"
+    Lex_Text()
+    _const[11] = val
+    If match Then
+      _opt[1] = "And"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "Or"
+    Lex_Text()
+    _const[12] = val
+    If match Then
+      _opt[1] = "Or"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "("
+    Lex_Text()
+    _const[13] = val
+    If match Then
+      _opt[1] = "("
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = ","
+    Lex_Text()
+    _const[14] = val
+    If match Then
+      _opt[1] = ","
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = ")"
+    Lex_Text()
+    _const[15] = val
+    If match Then
+      _opt[1] = ")"
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = ":"
+    Lex_Text()
+    _const[16] = val
+    If match Then
+      _opt[1] = ":"
+    EndIf
+  EndIf
+  _val = Stack.PopValue("local")
+  _opt = Stack.PopValue("local")
+  If traceC Then
+    TextWindow.WriteLine("</Parse_Op> " + ptr)
+  EndIf
+EndSub
+
+Sub Parse_Mem
+  ' mem ::= <_name>[].[]<_name>
+  If traceC Then
+    TextWindow.WriteLine("<Parse_Mem> " + ptr)
+  EndIf
+  _const = ""
+  Stack.PushValue("local", _opt)
+  _opt = ""
+  Stack.PushValue("local", _val)
+  _val = ""
+  Stack.PushValue("ptr",ptr)
+  Lex_Name()
+  _val[1] = val
+  If match Then
+    Lex_Space0()
+  EndIf
+  If match Then
+    txt = "."
+    Lex_Text()
+    _const[1] = val
+  EndIf
+  If match Then
+    Lex_Space0()
+  EndIf
+  If match Then
+    Lex_Name()
+    _val[2] = val
+  EndIf
+  _ptr = Stack.PopValue("ptr")
+  If match = "False" Then
+    ptr = _ptr
+  EndIf
+  Exec_Mem()
+  _val = Stack.PopValue("local")
+  _opt = Stack.PopValue("local")
+  If traceC Then
+    TextWindow.WriteLine("</Parse_Mem> " + ptr)
+  EndIf
+EndSub
+
+Sub Parse_Var
+  ' var ::= {<_name>|'['|']'}
+  If traceC Then
+    TextWindow.WriteLine("<Parse_Var> " + ptr)
+  EndIf
+  _const = ""
+  Stack.PushValue("local", _opt)
+  _opt = ""
+  Stack.PushValue("local", _val)
+  _val = ""
+  Lex_Name()
+  _val[1] = val
+  If match Then
+    _opt[1] = "_name"
+  EndIf
+  If match = "False" Then
+    txt = "["
+    Lex_Text()
+    _const[1] = val
+    If match Then
+      _opt[1] = "["
+    EndIf
+  EndIf
+  If match = "False" Then
+    txt = "]"
+    Lex_Text()
+    _const[2] = val
+    If match Then
+      _opt[1] = "]"
+    EndIf
+  EndIf
+  _val = Stack.PopValue("local")
+  _opt = Stack.PopValue("local")
+  If traceC Then
+    TextWindow.WriteLine("</Parse_Var> " + ptr)
+  EndIf
+EndSub
+
+Sub Parse_Rem
+  ' rem ::= _SQ*
+  If traceC Then
+    TextWindow.WriteLine("<Parse_Rem> " + ptr)
+  EndIf
+  _const = ""
+  Stack.PushValue("local", _opt)
+  _opt = ""
+  Stack.PushValue("local", _val)
+  _val = ""
+  Stack.PushValue("ptr",ptr)
+  txt = SQ
+  Lex_Text()
+  _const[1] = val
+  If match Then
+    _ptr = Text.GetIndexOf(Text.GetSubTextToEnd(buf, ptr), CRLF)
+    If _ptr = 0 Then
+      _ptr = len + 1
+    EndIf
+    _const[2] = Text.GetSubText(buf, ptr, _ptr - 1)
+    ptr = ptr + _ptr + 1
+    match = "True"
+  EndIf
+  _ptr = Stack.PopValue("ptr")
+  If match = "False" Then
+    ptr = _ptr
+  EndIf
+  Exec_Rem()
+  _val = Stack.PopValue("local")
+  _opt = Stack.PopValue("local")
+  If traceC Then
+    TextWindow.WriteLine("</Parse_Rem> " + ptr)
+  EndIf
+EndSub
+
+Sub Parse_Real
+  ' real ::= [-]<_num>[.<_num>]
+  If traceC Then
+    TextWindow.WriteLine("<Parse_Real> " + ptr)
+  EndIf
+  _const = ""
+  Stack.PushValue("local", _opt)
+  _opt = ""
+  Stack.PushValue("local", _val)
+  _val = ""
+  Stack.PushValue("ptr",ptr)
+  txt = "-"
+  Lex_Text()
+  _const[1] = val
+  match = "True"
+  If match Then
+    Lex_Num()
+    _val[1] = val
+  EndIf
+  If match Then
+    Stack.PushValue("ptr",ptr)
+    txt = "."
+    Lex_Text()
+    _const[2] = val
+    If match Then
+      Lex_Num()
+      _val[2] = val
+    EndIf
+    _ptr = Stack.PopValue("ptr")
+    If match = "False" Then
+      ptr = _ptr
+    EndIf
+    match = "True"
+  EndIf
+  _ptr = Stack.PopValue("ptr")
+  If match = "False" Then
+    ptr = _ptr
+  EndIf
+  Exec_Real()
+  _val = Stack.PopValue("local")
+  _opt = Stack.PopValue("local")
+  If traceC Then
+    TextWindow.WriteLine("</Parse_Real> " + ptr)
+  EndIf
+EndSub
